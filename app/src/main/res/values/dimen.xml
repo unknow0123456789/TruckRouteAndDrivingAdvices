@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="NavItemHorizontalMargin">5dp</dimen>
+    <dimen name="NavItemVerticalMargin">5dp</dimen>
+    <dimen name="NavHorizontalMargin">0dp</dimen>
+    <dimen name="NavVerticalMargin">15dp</dimen>
+    <dimen name="Nav_ImageButtonMargin">5dp</dimen> //use to control button size
+
+    <dimen name="LoginTitleTextSize">50dp</dimen>
+    <dimen name="LoginTitleTopMargin">100dp</dimen>
+    <dimen name="LoginVerticalMargin">30dp</dimen>
+    <dimen name="LoginHorizontalMargin">40dp</dimen>
+    <dimen name="LoginNextButtonMargin">5dp</dimen>
+    <dimen name="LoginEditTextMargin">10dp</dimen>
+
+    <dimen name="Gauge_ControllableDevices_ImageButtonMargin">10dp</dimen> //use to control button size
+
+    <dimen name="Log_layout_horizontalMargin">10dp</dimen>
+
+
+    <dimen name="CommonFragment_TitleTopMargin">30dp</dimen>
+    <dimen name="CommonFragment_TitleHorizontalMargin">20dp</dimen>
+    <dimen name="CommonFragment_HorizontalMargin">30dp</dimen>
+    <dimen name="CommonFragment_VerticalMargin">5dp</dimen>
+
+
+    <dimen name="TitleTextSize">45dp</dimen>
+    <dimen name="NormalTextSize">25dp</dimen>
+    <dimen name="SmallTextSize">15dp</dimen>
+
+    <dimen name="Board_NameTextTopMargin">15dp</dimen>
+
+    <dimen name="Chart_Margin">10dp</dimen>
+    <dimen name="ChartLayout_VerticalMargin">15dp</dimen>
+
+
+
+    <dimen name="PanelCenter_TextViewMargin">5dp</dimen>
+    <dimen name="PanelCenter_TextViewContainerMargin">10dp</dimen>
+
+
+</resources>
