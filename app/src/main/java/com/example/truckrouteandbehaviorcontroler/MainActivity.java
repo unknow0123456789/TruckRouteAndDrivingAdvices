@@ -30,29 +30,29 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapView;
 import com.google.android.gms.maps.OnMapReadyCallback;
-import com.google.android.gms.maps.model.BitmapDescriptor;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.Polyline;
 import com.google.android.gms.maps.model.PolylineOptions;
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.android.gms.tasks.Task;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.maps.android.PolyUtil;
 
+import java.math.RoundingMode;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 
 import android.Manifest; // new
+import android.widget.TextView;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback {
 
@@ -65,6 +65,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     ArrayList<Marker> GasStationMarkers, RouteMatrixMakers;
     Polyline CurrentPolyline;
+    List<LatLng> CurrentPolylinePoints,MiniCurrentPolylineList;
     int CountRouteMatrixRequest;    //only use in SearchLocationRouteMatrix
 
     Marker LastedUsedMarker, StampMarker;
@@ -75,6 +76,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     FusedLocationProviderClient fusedLocationProviderClient;
 
     Json_MPG_Receiver FirstRequestedMPG=null;
+
+    TextView AccelerationTV,WeightTV,MPGTV,RouteLengthTV, SuggestionTV;
 
     static int LOCATION_REQUEST_CODE = 10001;
     private static final String TAG = "Current loc";
@@ -94,15 +97,25 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         //------------------------------------
 
 
+        //API----------------------------------
         GoogleMapAPI = API_client.getClient("https://maps.googleapis.com/maps/api/").create(API_interface.class);
         GoogleRoadAPI = API_client.getClient("https://roads.googleapis.com/").create(API_interface.class);
         GoogleRouteAPI = API_client.getClient("https://routes.googleapis.com/").create(API_interface.class);
-        CustomServerAPI = API_client.getClient("https://192.168.x.x:8000/").create(API_interface.class);
+        CustomServerAPI = API_client.getClient("http://192.168.1.13:8000/").create(API_interface.class);
+        //------------------------------------
+
+        //TextView-----------------------------
+        AccelerationTV=findViewById(R.id.PanelCenter_DataPanel_BehaviorData);
+        MPGTV=findViewById(R.id.PanelCenter_DataPanel_MPGData);
+        WeightTV=findViewById(R.id.PanelCenter_DataPanel_WeightData);
+        RouteLengthTV=findViewById(R.id.PanelCenter_DataPanel_RouteLengthData);
+        SuggestionTV =findViewById(R.id.PanelCenter_ButtonPanel_BehaviorSuggestionData);
+        //-------------------------------------
 
         ImageButton RouteButton = findViewById(R.id.PanelCenter_ButtonPanel_RouteBTN);
         RouteButtonCustomOnClick(RouteButton);
 
-        RouteBreaker(9.0, 500000.0, 5.0);
+        //RouteBreaker(9.0, 500000.0, 5.0);
 
     }
 
@@ -110,6 +123,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         routebtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if(map.getMyLocation()==null) return;
                 if (RouteBTNState == false) {
                     LatLng MyCurrentLocation=new LatLng(map.getMyLocation().getLatitude(),map.getMyLocation().getLongitude());
                     if (MyCurrentLocation != null) {
@@ -127,7 +141,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     RemoveAllMarkerFromList(RouteMatrixMakers);
                     routebtn.setImageDrawable(getDrawable(R.mipmap.route_icon));
                     RouteBTNState = false;
-
+                    FirstRequestedMPG=null;
+                    GetCurrentLocationHandler.removeCallbacks(GetCurrentLocationRunnable);
+                    GetCurrentLocationRunnable=null;
                 }
             }
         });
@@ -176,11 +192,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     public void SearchForPLaces(API_interface UsingInterface, LatLng AtLocation, String SearchText, CustomResponse CR) {
         if (UsingInterface != null) {
             for (int i = 100; i <= 5000; i += 100) {
-                Call<Json_ReceivingPLaces> ReceivingGasStation = UsingInterface.GetGasStation("formatted_address,name,place_id,opening_hours,geometry",
+                Call<Json_ReceivingPLaces> ReceivingGasStation = UsingInterface.GetGasStation(
+                        "formatted_address,name,place_id,opening_hours,geometry",
                         SearchText,
                         "textquery",
                         "circle:" + i + "@" + AtLocation.latitude + "," + AtLocation.longitude,
-                        getResources().getString(R.string.google_map_key));
+                        getResources().getString(R.string.google_place_key));
 
                 Log.d("TestGasStationURL", ReceivingGasStation.request().url().toString());
 
@@ -195,6 +212,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         Log.e("TestGasStation", "Failed");
                     }
                 });
+                try
+                {
+                    TimeUnit.MILLISECONDS.sleep(100);
+                }catch (Exception ex){
+                    Log.e("SleepError", ex.getMessage());
+                }
             }
         }
     }
@@ -219,18 +242,26 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private void RecalculateRouteBreaker(String encodedPolyline,GoogleMap googleMap,double mpg,double gas,double routeLength)
     {
         List<LatLng> ListLatLng = PolyUtil.decode(encodedPolyline);
-        SearchLatLngAfterXMiles(GoogleRouteAPI, ListLatLng, RouteBreaker(mpg,routeLength,gas), new CustomResponse() {
-            @Override
-            public void OnResponse(Object obj) {
-                ArrayList<Double> FindIndexes = (ArrayList<Double>) obj;
-                RefreshBreakPoint(FindIndexes,ListLatLng);
+        new Thread(){
+            public void run()
+            {
+                SearchLatLngAfterXMiles(GoogleRouteAPI, ListLatLng, RouteBreaker(mpg,routeLength,gas), new CustomResponse() {
+                    @Override
+                    public void OnResponse(Object obj) {
+                        ArrayList<Double> FindIndexes = (ArrayList<Double>) obj;
+                        RefreshBreakPoint(FindIndexes,MiniCurrentPolylineList);
+                        GetCurrentLocationHandler.postDelayed(GetCurrentLocationRunnable,60000);  //deContinue of loop
+                    }
+                });
             }
-        });
+        }.start();
     }
 
     public void RequestRoute(LatLng origin, LatLng Des, API_interface UsingInterface, CustomResponse CR) {
         ComputeRouteBody computeRouteBody = new ComputeRouteBody(origin, Des, "DRIVE");
-        Call<Json_ReceivingRoutes> CallForRoute = UsingInterface.GetRoutes(getString(R.string.google_map_key), "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline", computeRouteBody);
+        Call<Json_ReceivingRoutes> CallForRoute = UsingInterface.GetRoutes(getString(R.string.google_map_key),
+                "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
+                computeRouteBody);
         CallForRoute.enqueue(new Callback<Json_ReceivingRoutes>() {
             @Override
             public void onResponse(Call<Json_ReceivingRoutes> call, Response<Json_ReceivingRoutes> response) {
@@ -254,15 +285,21 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
         if (CurrentPolyline != null) CurrentPolyline.remove();
         CurrentPolyline = googleMap.addPolyline(polylineOptions.color(getColor(R.color.blue)));
-
-
-        SearchLatLngAfterXMiles(GoogleRouteAPI, CurrentPolyline.getPoints(), RouteBreaker(MPG,RouteLength,GalonGas), new CustomResponse() {
-            @Override
-            public void OnResponse(Object obj) {
-                ArrayList<Double> FindIndexes = (ArrayList<Double>) obj;
-                RefreshBreakPoint(FindIndexes,CurrentPolyline.getPoints());
+        CurrentPolylinePoints=CurrentPolyline.getPoints();
+        new Thread()
+        {
+            public void run()
+            {
+                if(CurrentPolyline!=null)SearchLatLngAfterXMiles(GoogleRouteAPI,CurrentPolylinePoints, RouteBreaker(MPG,RouteLength,GalonGas), new CustomResponse() {
+                    @Override
+                    public void OnResponse(Object obj) {
+                        ArrayList<Double> FindIndexes = (ArrayList<Double>) obj;
+                        RefreshBreakPoint(FindIndexes,MiniCurrentPolylineList);
+                        GetCurrentLocationHandler.postDelayed(GetCurrentLocationRunnable,60000); //start of loop call
+                    }
+                });
             }
-        });
+        }.start();
     }
     public void RefreshBreakPoint(ArrayList<Double> FindIndexes,List<LatLng> PolylinePoints)
     {
@@ -286,8 +323,20 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     ArrayList<Double> RouteBreaker(Double MPG, Double RouteLenghtInMeters, Double GalonGas) {
+
+
         ArrayList<Double> routeBreaker = new ArrayList();
         Double RouteLenghtInMiles = RouteLenghtInMeters * 0.000621;
+
+        //SetRouteLengh
+        DecimalFormat df = new DecimalFormat("#.##");
+        df.setRoundingMode(RoundingMode.CEILING);
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                RouteLengthTV.setText(df.format(RouteLenghtInMiles)+"M");
+            }
+        });
         Double Maximum1GasRefillRunTime = MPG * GalonGas;
         for (int i = 1; i * Maximum1GasRefillRunTime < RouteLenghtInMiles; i++) {
             routeBreaker.add(i * Maximum1GasRefillRunTime);
@@ -305,18 +354,30 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         return SearchAt;
     }
 
-    public void SearchLatLngAfterXMiles(API_interface RouteInterface, List<LatLng> Points, ArrayList<Double> XMiles, CustomResponse CR) {
+    public void SearchLatLngAfterXMiles(API_interface RouteInterface, List<LatLng> PointsRaw, ArrayList<Double> XMiles, CustomResponse CR) {
         ArrayList<Json_ReceivingRouteMatrix> result = new ArrayList<>();
+        List<LatLng>Points=new ArrayList<>();
+        if(PointsRaw.size()>3000)
+        {
+            int ScaleDownSelector=PointsRaw.size()/3000;
+            if(PointsRaw.size()%3000!=0)ScaleDownSelector++;
+            for(int i=0;i<PointsRaw.size();i+=ScaleDownSelector)
+            {
+                Points.add(PointsRaw.get(i));
+            }
+        }
+        else Points=PointsRaw;
+        MiniCurrentPolylineList=Points;
         List<LatLng> SearchPoints;
         LatLng Ori = Points.get(0);
+        Log.d("TestSelector", PointsRaw.indexOf(Points.get(Points.size()-1))+"");
         int SearchIndexMax = Points.size(), SearchIndex = 1;
         CountRouteMatrixRequest = 0;
         while (SearchIndex < Points.size()) {
             CountRouteMatrixRequest++;
             if (Points.size() - SearchIndex > 625) SearchIndexMax = SearchIndex + 625;
             else SearchIndexMax = Points.size();
-            SearchPoints = new ArrayList<>();
-            for (; SearchIndex < SearchIndexMax; SearchIndex++) {
+            for (SearchPoints = new ArrayList<>(); SearchIndex < SearchIndexMax; SearchIndex++) {
                 SearchPoints.add(Points.get(SearchIndex));
             }
             RequestRouteMatrix(Ori, SearchPoints, RouteInterface, new CustomResponse() {
@@ -334,10 +395,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             break_For_Xmile:
                             for (Json_ReceivingRouteMatrix point :
                                     result) {
-                                double Miles = point.DistanceMeters * 0.000621;
-                                if (Miles >= Xmile) {
-                                    DestinationsIndex.add(point.DestinationIndex + 1);//using this index (+1 because the des array is from the polyline array which doesn't count the 0 index since it's the origin point), to track back to the Polyline Array to know the LatLng
-                                    break break_For_Xmile;
+                                if(true) {
+                                    double Miles = point.DistanceMeters * 0.000621;
+                                    if (Miles >= Xmile) {
+                                        DestinationsIndex.add(point.DestinationIndex + 1);//using this index (+1 because the des array is from the polyline array which doesn't count the 0 index since it's the origin point), to track back to the Polyline Array to know the LatLng
+                                        break break_For_Xmile;
+                                    }
                                 }
                             }
                         }
@@ -345,6 +408,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     }
                 }
             });
+            try
+            {
+                TimeUnit.MILLISECONDS.sleep(10);
+            }catch (Exception ex){
+                Log.e("SleepError", ex.getMessage());
+            }
         }
 
     }
@@ -359,48 +428,74 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     public void RequestRouteMatrix(LatLng ori, List<LatLng> des, API_interface RouteInterface, CustomResponse CR) {
         ComputeRouteMatrixBody computeRouteMatrixBody = new ComputeRouteMatrixBody(ori, des);
-        Call<ArrayList<Json_ReceivingRouteMatrix>> CallRouteMatrix = RouteInterface.GetRouteMatrix(getString(R.string.google_map_key), "originIndex,destinationIndex,duration,distanceMeters", computeRouteMatrixBody);
+        Call<ArrayList<Json_ReceivingRouteMatrix>> CallRouteMatrix = RouteInterface.GetRouteMatrix(
+                getString(R.string.google_map_key),
+                "originIndex,destinationIndex,duration,distanceMeters",
+                computeRouteMatrixBody);
         CallRouteMatrix.enqueue(new Callback<ArrayList<Json_ReceivingRouteMatrix>>() {
             @Override
-            public void onResponse(Call<ArrayList<Json_ReceivingRouteMatrix>> call, Response<ArrayList<Json_ReceivingRouteMatrix>> response) {
-                Log.d("TestRouteMatrix", "url: " + CallRouteMatrix.request().url());
-                Log.d("TestRouteMatrix", "response code: " + response.code());
+            public void onResponse(Call<ArrayList<Json_ReceivingRouteMatrix>> call,
+                                   Response<ArrayList<Json_ReceivingRouteMatrix>> response) {
+                Log.d("TestRouteMatrixAsync", "url: " + CallRouteMatrix.request().url());
+                Log.d("TestRouteMatrixAsync", "response code: " + response.code());
                 if (response.body() != null) {
                     CR.OnResponse(response.body());
+                }
+                else if(response.code()==429) {
+
+                    try {
+                        TimeUnit.SECONDS.sleep(1);
+                    } catch (Exception ex) {
+                        Log.e("SleepError", ex.getMessage());
+                    }
+                    RequestRouteMatrix(ori, des, RouteInterface, CR);
+
                 }
             }
 
             @Override
             public void onFailure(Call<ArrayList<Json_ReceivingRouteMatrix>> call, Throwable t) {
-                Log.e("TestRouteMatrix", t.getMessage());
+                Log.e("TestRouteMatrixAsync", t.getMessage());
             }
         });
     }
 
     public void ArrayArrange(ArrayList<Json_ReceivingRouteMatrix> daList, int i, boolean revertCheck) {
         //Log.e("testArange", "i normal="+i);
-        if (i < 0 || i + 1 >= daList.size()) {
-            //Log.e("testArange", "i Log out="+i);
-            return;
+        try {
+            while(i+1<daList.size() && daList.get(i+1).DistanceMeters==null) daList.remove(i+1);
+            if (i < 0 || i >= daList.size() || (i + 1) >= daList.size()) {
+                //Log.e("testArange", "i Log out="+i);
+                return;
+            } else
+            {
+                if (daList.get(i).DistanceMeters > daList.get(i + 1).DistanceMeters) {
+                    //Log.e("testArange", "i swap="+i);
+                    Json_ReceivingRouteMatrix temp = daList.get(i);
+                    daList.set(i, daList.get(i + 1));
+                    daList.set(i + 1, temp);
+                    ArrayArrange(daList, i - 1, true);
+                }
+            }
+            if (revertCheck != true) ArrayArrange(daList, i + 1, false);
         }
-        if (daList.get(i).DistanceMeters > daList.get(i + 1).DistanceMeters) {
-            //Log.e("testArange", "i swap="+i);
-            Json_ReceivingRouteMatrix temp = daList.get(i);
-            daList.set(i, daList.get(i + 1));
-            daList.set(i + 1, temp);
-            ArrayArrange(daList, i - 1, true);
+        catch (Exception ex)
+        {
+            Log.e("ArrayArrange", ex.getMessage());
         }
-        if (!revertCheck) ArrayArrange(daList, i + 1, false);
     }
 
     public void CallCustomAPI (API_interface CustomAPIInterface,CustomResponse CR)
     {
         if(CustomAPIInterface==null) return;
         Call<Json_MPG_Receiver> CallForMPG=CustomAPIInterface.GetMPG();
+
+        Log.d("TestCustomAPI", "URL:"+CallForMPG.request().url());
         CallForMPG.enqueue(new Callback<Json_MPG_Receiver>() {
             @Override
             public void onResponse(Call<Json_MPG_Receiver> call, Response<Json_MPG_Receiver> response) {
                 Log.d("TestCustomAPI", "Code:"+response.code());
+                Log.d("TestCustomAPI", "URL:"+CallForMPG.request().url());
                 if(response.body()!=null)CR.OnResponse(response.body());
             }
 
@@ -421,10 +516,63 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     CallCustomAPI(CustomServerAPI, new CustomResponse() {
                         @Override
                         public void OnResponse(Object obj) {
+                            DecimalFormat df = new DecimalFormat("#.##");
+                            df.setRoundingMode(RoundingMode.CEILING);
+
+
                             Json_MPG_Receiver jsonMpgReceiver=(Json_MPG_Receiver)obj;
                             FirstRequestedMPG = jsonMpgReceiver;
-                            Double MPG=jsonMpgReceiver.MPG, GalonGas=jsonMpgReceiver.GalonGas;
+                            Double MPG=jsonMpgReceiver.MPG, GalonGas=jsonMpgReceiver.GalonGas,Weight= jsonMpgReceiver.Weight;
                             if(MPG!=null && GalonGas!=null)ComputeRoute(StampPoint, latLng, GoogleRouteAPI,map,MPG ,GalonGas,0);
+                            GetCurrentLocationRunnable=new Runnable() {
+                                @Override
+                                public void run() {
+                                    if(FirstRequestedMPG!=null)CallCustomAPI(CustomServerAPI, new CustomResponse() {
+                                        @Override
+                                        public void OnResponse(Object obj) {
+                                            Location location=map.getMyLocation();
+                                            Json_MPG_Receiver jsonMpgReceiver=(Json_MPG_Receiver)obj;
+                                            Double MPG=jsonMpgReceiver.MPG, GalonGas=jsonMpgReceiver.GalonGas,Weight= jsonMpgReceiver.Weight,Acceleration= jsonMpgReceiver.Acceleration;
+                                            if(CurrentPolyline!=null)
+                                            {
+                                                LatLng destination=CurrentPolyline.getPoints().get(CurrentPolyline.getPoints().size()-1);
+                                                ComputeRoute(new LatLng(location.getLatitude(),location.getLongitude()),destination,GoogleRouteAPI,map,MPG,GalonGas,1);
+                                            }
+
+                                            //SetText
+                                            AccelerationTV.setText(df.format(Acceleration)+"m/s²");
+                                            MPGTV.setText(df.format(MPG)+"");
+                                            WeightTV.setText(df.format(Weight)+"Kg");
+
+                                            if(FirstRequestedMPG.MPG-jsonMpgReceiver.MPG>=1)
+                                            {
+                                                MPGTV.setTextColor(getColor(R.color.alertRed));
+                                                SuggestionTV.setTextColor(getColor(R.color.alertRed));
+                                                if(FirstRequestedMPG.Acceleration>jsonMpgReceiver.Acceleration)
+                                                {
+                                                    SuggestionTV.setText("Suggestion: Please increase your acceleration!");
+                                                }
+                                                else
+                                                {
+                                                    SuggestionTV.setText("Suggestion: Please decrease your acceleration!");
+                                                }
+                                            }
+                                            else
+                                            {
+                                                MPGTV.setTextColor(getColor(R.color.gray));
+                                                SuggestionTV.setTextColor(getColor(R.color.gray));
+                                                SuggestionTV.setText("Suggestion: neutral");
+                                            }
+
+                                        }
+                                    });
+                                }
+                            };
+                            //SetText
+                            AccelerationTV.setText("N/A");
+                            MPGTV.setText(df.format(MPG)+"");
+                            WeightTV.setText(df.format(Weight)+"");
+
                         }
                     });
                 LastPressedLatLng = latLng;
@@ -438,6 +586,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         googleMap.setOnMarkerClickListener(new GoogleMap.OnMarkerClickListener() {
             @Override
             public boolean onMarkerClick(@NonNull Marker marker) {
+                LatLng markerPos= marker.getPosition();
                 if (RouteMatrixMakers != null) {
 
                     RemoveAllMarkerFromList(GasStationMarkers);
@@ -445,18 +594,25 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     for (Marker RMmarker :
                             RouteMatrixMakers) {
                         if (marker.getPosition().equals(RMmarker.getPosition())) {
-                            SearchForPLaces(GoogleMapAPI, marker.getPosition(), "gas station", new CustomResponse() {
-                                @Override
-                                public void OnResponse(Object obj) {
-                                    GasStationGlobal = new ArrayList<>();
-                                    for (Place gasStation :
-                                            FindPostResponse(obj)) {
-                                        GasStationGlobal.add(gasStation);
-                                        Marker marker = map.addMarker(new MarkerOptions().title(gasStation.Name).position(gasStation.Location).icon(BitmapDescriptorFactory.fromBitmap(CustomBitMap(R.mipmap.gas_station_icon, 170, 170))));
-                                        GasStationMarkers.add(marker);
-                                    }
+                            new Thread()
+                            {
+                                public void run()
+                                {
+                                    SearchForPLaces(GoogleMapAPI,markerPos, "gas station", new CustomResponse() {
+                                        @Override
+                                        public void OnResponse(Object obj) {
+                                            GasStationGlobal = new ArrayList<>();
+                                            for (Place gasStation :
+                                                    FindPostResponse(obj)) {
+                                                GasStationGlobal.add(gasStation);
+                                                Marker marker = map.addMarker(new MarkerOptions().title(gasStation.Name).position(gasStation.Location).icon(BitmapDescriptorFactory.fromBitmap(CustomBitMap(R.mipmap.gas_station_icon, 170, 170))));
+                                                GasStationMarkers.add(marker);
+                                            }
+                                        }
+                                    });
+
                                 }
-                            });
+                            }.start();
                         }
                     }
                 }
@@ -517,33 +673,49 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         map.setMyLocationEnabled(true);
-        map.setOnMyLocationChangeListener(new GoogleMap.OnMyLocationChangeListener() {
-            @Override
-            public void onMyLocationChange(@NonNull Location location) {
-                CallCustomAPI(CustomServerAPI, new CustomResponse() {
-                    @Override
-                    public void OnResponse(Object obj) {
-                        Json_MPG_Receiver jsonMpgReceiver=(Json_MPG_Receiver)obj;
-                        if(CurrentPolyline!=null)
-                        {
-                            LatLng destination=CurrentPolyline.getPoints().get(CurrentPolyline.getPoints().size()-1);
-                            ComputeRoute(new LatLng(location.getLatitude(),location.getLongitude()),destination,GoogleRouteAPI,map,jsonMpgReceiver.MPG,jsonMpgReceiver.GalonGas,1);
-                        }
-                        if(FirstRequestedMPG.MPG-jsonMpgReceiver.MPG>=5)
-                        {
-                            if(FirstRequestedMPG.Acceleration>jsonMpgReceiver.Acceleration)
-                            {
-                                //Suggest to increase acceleration
-                            }
-                            else
-                            {
-                                //Suggest to decrease acceleration
-                            }
-                        }
-                    }
-                });
-            }
-        });
+//        map.setOnMyLocationChangeListener(new GoogleMap.OnMyLocationChangeListener() {
+//            @Override
+//            public void onMyLocationChange(@NonNull Location location) {
+//                if(FirstRequestedMPG!=null)CallCustomAPI(CustomServerAPI, new CustomResponse() {
+//                    @Override
+//                    public void OnResponse(Object obj) {
+//                        Json_MPG_Receiver jsonMpgReceiver=(Json_MPG_Receiver)obj;
+//                        Double MPG=jsonMpgReceiver.MPG, GalonGas=jsonMpgReceiver.GalonGas,Weight= jsonMpgReceiver.Weight,Acceleration= jsonMpgReceiver.Acceleration;
+//                        if(CurrentPolyline!=null)
+//                        {
+//                            LatLng destination=CurrentPolyline.getPoints().get(CurrentPolyline.getPoints().size()-1);
+//                            ComputeRoute(new LatLng(location.getLatitude(),location.getLongitude()),destination,GoogleRouteAPI,map,MPG,GalonGas,1);
+//                        }
+//
+//                        //SetText
+//                        AccelerationTV.setText(Acceleration+"");
+//                        MPGTV.setText(MPG+"");
+//                        WeightTV.setText(Weight+"");
+//
+//                        if(FirstRequestedMPG.MPG-jsonMpgReceiver.MPG>=5)
+//                        {
+//                            MPGTV.setTextColor(getColor(R.color.alertRed));
+//                            SuggestionTV.setTextColor(getColor(R.color.alertRed));
+//                            if(FirstRequestedMPG.Acceleration>jsonMpgReceiver.Acceleration)
+//                            {
+//                                SuggestionTV.setText("Please decrease your acceleration!");
+//                            }
+//                            else
+//                            {
+//                                SuggestionTV.setText("Please increase your acceleration!");
+//                            }
+//                        }
+//                        else
+//                        {
+//                            MPGTV.setTextColor(getColor(R.color.gray));
+//                            SuggestionTV.setTextColor(getColor(R.color.gray));
+//                            SuggestionTV.setText("neutral");
+//                        }
+//
+//                    }
+//                });
+//            }
+//        });
     }
     // --- new
 

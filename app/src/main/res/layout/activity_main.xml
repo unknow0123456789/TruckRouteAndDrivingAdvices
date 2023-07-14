@@ -49,6 +49,27 @@
                     android:background="?selectableItemBackgroundBorderless"
                     />
             </RelativeLayout>
+            <RelativeLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:id="@+id/PanelCenter_ButtonPanel_BehaviorSuggestionContainer"
+                android:layout_marginHorizontal="@dimen/PanelCenter_TextViewContainerMargin"
+                android:layout_centerVertical="true"
+                android:layout_toRightOf="@id/PanelCenter_ButtonPanel_RouteBTNContainer"
+                >
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:id="@+id/PanelCenter_ButtonPanel_BehaviorSuggestionData"
+                    android:textColor="@color/gray"
+                    android:textAlignment="center"
+                    android:textSize="@dimen/SmallTextSize"
+                    android:fontFamily="@font/nexa_heavy"
+                    android:text="Suggestion: neutral"
+                    android:layout_margin="@dimen/PanelCenter_TextViewMargin"
+                    android:layout_centerHorizontal="true"
+                    />
+            </RelativeLayout>
         </RelativeLayout>
         <RelativeLayout
             android:layout_width="match_parent"
@@ -151,10 +172,44 @@
                     android:textAlignment="center"
                     android:textSize="@dimen/SmallTextSize"
                     android:fontFamily="@font/nexa_extralight"
-                    android:text="MPG"
+                    android:text="Length"
                     android:layout_margin="@dimen/PanelCenter_TextViewMargin"
                     android:layout_centerHorizontal="true"
                     android:layout_below="@id/PanelCenter_DataPanel_RouteLengthData"
+                    />
+            </RelativeLayout>
+            <RelativeLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:id="@+id/PanelCenter_DataPanel_WeightContainer"
+                android:layout_marginHorizontal="@dimen/PanelCenter_TextViewContainerMargin"
+                android:layout_centerHorizontal="true"
+                android:layout_below="@id/PanelCenter_DataPanel_BehaviorContainer"
+                >
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:id="@+id/PanelCenter_DataPanel_WeightData"
+                    android:textColor="@color/gray"
+                    android:textAlignment="center"
+                    android:textSize="@dimen/NormalTextSize"
+                    android:fontFamily="@font/nexa_heavy"
+                    android:text="Weight"
+                    android:layout_margin="@dimen/PanelCenter_TextViewMargin"
+                    android:layout_centerHorizontal="true"
+                    />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:id="@+id/PanelCenter_DataPanel_WeightTitle"
+                    android:textColor="@color/black"
+                    android:textAlignment="center"
+                    android:textSize="@dimen/SmallTextSize"
+                    android:fontFamily="@font/nexa_extralight"
+                    android:text="Weight"
+                    android:layout_margin="@dimen/PanelCenter_TextViewMargin"
+                    android:layout_centerHorizontal="true"
+                    android:layout_below="@id/PanelCenter_DataPanel_WeightData"
                     />
             </RelativeLayout>
         </RelativeLayout>
